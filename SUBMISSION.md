@@ -1,5 +1,8 @@
 # Submission
 
+Drive folder (screenshots, video, anything that doesn't belong in git):
+https://drive.google.com/drive/folders/1QJOEy2o-9BJIiHDv9m600iaJI8Tu-x3X
+
 ## Deliverables index
 
 | Deliverable | Doc / path in repo |
@@ -10,8 +13,8 @@
 | AI workflow note | [`AI_WORKFLOW.md`](AI_WORKFLOW.md) |
 | Submission file (what's included) | [`SUBMISSION.md`](SUBMISSION.md) — this file |
 | Live product URL | [`SUBMISSION.md`](SUBMISSION.md#live-url) — to be filled in once deployed |
-| Walkthrough video URL | [`walkthrough-video.txt`](walkthrough-video.txt) |
-| Screenshots / demo GIF | [`screenshots/`](screenshots/) |
+| Walkthrough video URL | [`walkthrough-video.txt`](walkthrough-video.txt) + Drive folder above |
+| Screenshots / demo GIF | [`screenshots/`](screenshots/) + Drive folder above |
 | Manual test checklist (extra) | [`UI_TEST_CASES.md`](UI_TEST_CASES.md) |
 | Sample files for testing import (extra) | [`test-files/`](test-files/) |
 | Render deploy blueprint (extra) | [`render.yaml`](render.yaml) |
@@ -75,7 +78,8 @@ each to see the owned/shared/permission split in action.
 
 ## Walkthrough video
 
-See `walkthrough-video.txt` — not recorded yet, placeholder for now.
+See `walkthrough-video.txt` — not recorded yet, placeholder for now. Will be linked here and
+dropped into the Drive folder above once done.
 
 ## What's done
 
