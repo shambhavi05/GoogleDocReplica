@@ -2,163 +2,106 @@
 
 ## Overview
 
-DocSpace is a modular monolith: one Spring Boot backend exposing a REST API, one React SPA
-frontend, backed by a single PostgreSQL database. There is no inter-service messaging, no
-separate auth service, and no microservice boundaries — all backend logic lives in one
-deployable JAR, organized into `config` / `controller` / `service` / `repository` / `entity` /
-`dto` / `exception` / `security` packages for separation of concerns.
+One backend, one frontend, one database. Modular monolith — all the backend logic sits in one
+Spring Boot jar, split into `config` / `controller` / `service` / `repository` / `entity` / `dto`
+/ `exception` / `security` packages. No microservices, no separate auth service, nothing like
+that — didn't need it.
 
 ```
-Browser (React SPA, :5173)
-     │  HTTPS/JSON, credentials: include (session cookie)
+Browser (React SPA)
+     │  JSON over HTTPS, session cookie
      ▼
-Spring Boot API (:8080)
+Spring Boot API
      │  Spring Data JPA / Hibernate
      ▼
-PostgreSQL (:5434 host / :5432 in-container)
+PostgreSQL
 ```
 
-## Database schema
+## Database
 
-Three tables, managed by Flyway (`backend/src/main/resources/db/migration`):
+Five tables, managed by Flyway migrations in `backend/src/main/resources/db/migration`:
 
-- **users** — `id (uuid pk)`, `name`, `email (unique)`, `password_hash (nullable)`, `created_at`
-- **documents** — `id (uuid pk)`, `title`, `content (text, JSON-serialized TipTap doc)`,
-  `owner_id (fk → users, indexed)`, `version (int, optimistic lock)`, `created_at`, `updated_at`
-- **document_shares** — `id (uuid pk)`, `document_id (fk → documents, indexed)`,
-  `shared_with_id (fk → users, indexed)`, `permission (VIEWER|EDITOR)`, `created_at`, with a
-  **unique constraint on `(document_id, shared_with_id)`** to prevent duplicate shares at the
-  database level (in addition to an application-level check that returns a clean 400 instead of
-  a raw constraint-violation error).
+- **users** — id, name, email (unique), password_hash (unused, see below), created_at
+- **documents** — id, title, content (text, holds the TipTap JSON), owner_id, version (for
+  optimistic locking), timestamps
+- **document_shares** — links a document to a user with a permission (VIEWER/EDITOR), unique on
+  (document_id, shared_with_id) so you can't share the same doc with the same person twice
+- **document_comments** — document_id, author_id, body, resolved flag, created_at
+- **document_versions** — a snapshot of a document's content/title/version, taken right before
+  every save overwrites it, plus who saved it and when
 
-`content` is stored as `TEXT` rather than native `jsonb`. This was a conscious simplification: it
-keeps the schema portable between PostgreSQL (production/dev) and H2 (used for fast in-memory
-integration tests), at the cost of not being able to query/index inside the document JSON from
-SQL — which this application never needs to do, since documents are always read and written
-whole.
+`content` is stored as plain `TEXT`, not `jsonb`. Keeps it portable between Postgres (real use)
+and H2 (fast test runs), and we never need to query inside the JSON from SQL anyway — docs get
+read and written whole.
 
-## API design
+## API shape
 
-REST, resource-oriented, JSON everywhere except file upload (`multipart/form-data`). Documents
-expose both a summary shape (`DocumentSummaryResponse`, used in list views) and a detail shape
-(`DocumentResponse`, includes full `content` and `version`). Every document response includes a
-`role` field (`OWNER` / `EDITOR` / `VIEWER`) computed server-side for the *requesting user* — the
-frontend never has to independently infer or trust a role, it just renders what the backend says
-the caller is allowed to do.
+REST, JSON everywhere except file upload (multipart) and export (binary). Every document response
+includes a `role` field computed server-side for whoever's asking — frontend just renders what the
+backend says, doesn't try to work out permissions on its own.
 
-Mutating document updates (`PUT /api/documents/{id}`) require the client to send back the
-`version` it last read. This is both an optimistic-concurrency check and a natural fit for the
-autosave UX (see "Concurrency" below).
+Saves (`PUT /api/documents/{id}`) carry a `version` number. If it doesn't match what's in the DB,
+you get a 409 with the latest state instead of silently clobbering someone else's edit.
 
-## Authorization strategy
+## Authorization
 
-All authorization logic is centralized in `DocumentService.resolveAccess(documentId, userId)`,
-which every document-touching code path (read, edit, rename, delete, share management) calls
-before doing anything else. It returns a `DocumentAccess` record exposing `canRead()`,
-`canEdit()`, `canManage()`:
+Everything funnels through one method: `DocumentService.resolveAccess(documentId, userId)`. Every
+route that touches a document — read, edit, rename, delete, share, comment, export, whatever —
+calls this first. It hands back a `DocumentAccess` with `canRead()` / `canEdit()` / `canManage()`.
 
-- **Owner**: full access, including rename/delete/share management.
-- **Editor** (has a `DocumentShare` row with `permission = EDITOR`): can read and edit content,
-  cannot rename, delete, or manage sharing.
-- **Viewer** (`permission = VIEWER`): read-only.
-- **No relationship** (not owner, no share row): treated identically to "not found" — the
-  service throws `NotFoundException`, not `ForbiddenException`. This is a deliberate anti-IDOR
-  measure: a user probing random document IDs they have no access to gets a 404 either way,
-  so the API never confirms "this document exists but you can't see it."
+- Owner: everything.
+- Editor: read + edit content. No rename, no delete, no sharing.
+- Viewer: read only.
+- Nobody (not owner, no share): same as "not found" — throws a 404, not a 403. Point of this is so
+  probing random document IDs you don't have access to never confirms the document even exists.
 
-Identity is resolved from `CurrentUser.id()`, which reads the authenticated principal out of
-Spring Security's `SecurityContext` — populated during login from a server-side lookup of the
-user record, never from a request parameter or path variable supplied by the client. A path
-variable like `{id}` only ever identifies *which document*; it never identifies *who is asking*.
+Identity comes from `CurrentUser.id()`, which reads off Spring Security's session — never from
+anything the client sends in the URL or body. A path param like `{id}` only ever says *which*
+document, never *who's asking*.
 
-Sharing management (`ShareController` / `ShareService`) reuses `resolveAccess()` rather than
-re-implementing an ownership check, so there is exactly one place that decides "is this caller
-the owner of this document."
+## Auth
 
-## Authentication
+Session cookie, no password. Login screen lists the three demo accounts, you pick one,
+`POST /api/auth/login` takes just the email, looks up the user, sets up a session. That's it.
+`password_hash` sits unused on the User table — kept it so real auth could be bolted on later
+without a migration.
 
-Session-cookie based, no password, by design for this demo: the login screen lists the three
-seeded accounts, and `POST /api/auth/login` takes just an email, looks up the matching `User` row
-server-side, and establishes a `SecurityContext` backed by an `HttpSession`. The response is set
-via Spring Security's `HttpSessionSecurityContextRepository`, and the browser is expected to send
-the resulting session cookie (`withCredentials: true` on the frontend's Axios client) on every
-subsequent request. The `password_hash` column exists on `User` but is unused — it was kept so
-that real password-based login could be layered in later without a schema migration.
+CSRF is off for `/api/**`. Session cookie's the only thing carrying auth, CORS already locks down
+which origins can talk to the API, and there's no cross-site form-post attack surface here. If
+this ever serves a public, cross-origin frontend for real, bring CSRF back.
 
-CSRF protection is disabled for the `/api/**` surface. This is a deliberate trade-off explained
-in "Known limitations" below.
+## Trade-offs I made on purpose
 
-## Key engineering trade-offs
+- **No real auth** — frictionless for anyone testing this, and still proves the actual point:
+  backend decides who you are, not the client.
+- **Content as TEXT, not jsonb** — portability over in-DB querying I don't need.
+- **Optimistic locking, not CRDT** — a version number and a 409 is enough for "don't overwrite
+  each other," not enough for live co-editing. Said more below.
+- **CSRF off** — see above.
+- **Markdown/DOCX import+export cover headings, lists, paragraphs** — not full CommonMark, not
+  full DOCX fidelity. Good enough to actually use, not meant to replace Word.
 
-- **No password / real login** — chosen to keep the reviewer experience frictionless (pick a
-  name, go) while still proving the more important property for this assignment: that the
-  backend determines identity from its own session state, not from anything the client claims.
-- **Content as JSON text, not `jsonb`** — portability across Postgres/H2 for tests, at the cost
-  of in-database document queries (not needed here).
-- **Optimistic locking via a `version` column**, not a CRDT or operational-transform engine —
-  appropriate for a single-editor-at-a-time demo; see "Known limitations."
-- **CSRF disabled** rather than implemented with a double-submit cookie — see below.
-- **Markdown import is a light structural parser** (headings, bullet lists, paragraphs), not a
-  full CommonMark implementation — sufficient for demonstrating import, not a general-purpose
-  Markdown renderer.
+## What's not here yet
 
-## Known limitations
+- **No real-time co-editing.** No CRDTs, no operational transforms, no WebSocket push. Saves just
+  check the version number and 409 on conflict. Presence (who else has it open) is a 5-second
+  poll, not live cursors — it tells you someone else is looking, not what they're typing.
+- **Comments aren't anchored to text.** They're a flat thread on the whole document, not margin
+  comments tied to a selection. No suggestion/accept-reject mode either.
+- **Version history is view-only.** You can see what it used to say, can't restore to it yet, no
+  diff between versions.
+- **CSRF disabled** — see trade-offs above.
+- **No password/MFA** — demo auth only.
+- **Markdown/DOCX import skip tables, links, code blocks, images, inline formatting** — headings,
+  lists, and paragraphs only.
+- **No pagination anywhere** — fine for a demo, would need it for real scale.
 
-- **Concurrency model**: DocSpace does not support real-time concurrent co-editing (no
-  operational transforms, no CRDTs, no WebSocket sync). Instead, each save carries the last-known
-  `version`; if another save has landed in the meantime, the server returns `409 Conflict` with
-  the latest document state, and the frontend surfaces "changed elsewhere" rather than silently
-  overwriting. Two people editing the same document at the same time will see save conflicts
-  rather than a merged result — acceptable for this scope, but a real product would need
-  operational transforms or CRDTs (e.g. Yjs) for true concurrent editing.
-- **Presence is polling, not push**: `PresenceService` is an in-memory, process-local
-  `documentId → {userId → lastSeenInstant}` map (not persisted — presence has no meaning across a
-  restart). The frontend heartbeats and re-polls every 5 seconds via `usePresence`. This shows
-  "who else has this document open" but does **not** show live cursors, live text as others type,
-  or push updates — a genuinely real-time version would need WebSockets and is out of scope here.
-  Because the map is process-local, presence also resets to empty if the backend process restarts
-  or if the app is ever scaled to multiple instances without a shared presence store.
-- **Comments are document-level, not anchored to text**: `document_comments` has no reference to
-  a text range or TipTap node position — a comment is a flat discussion thread on the whole
-  document, not Google-Docs-style margin comments tied to a selection. Any collaborator with read
-  access can comment; only the comment's author or the document owner can resolve or delete it.
-  There is no "suggestion mode" (proposed edits accepted/rejected inline) in this pass.
-- **Version history is view-only**: `document_versions` captures a full snapshot (title + content
-  + version number + who saved it) immediately before every save overwrites the row in
-  `documents`, so the full edit history is there and browsable — but there is no restore-to-this-
-  version action yet, no diff view between two versions, just "look at what it used to say."
-- **CSRF**: disabled on `/api/**`. The session cookie is the only ambient credential, CORS
-  restricts which origins can even read API responses, and there is no cross-site form-submission
-  attack surface in this demo (no third-party page can usefully POST to this API and read the
-  result). A production deployment that serves the frontend from a different origin than a
-  public-facing user base should reintroduce double-submit-cookie or synchronizer-token CSRF
-  protection.
-- **No password / MFA** — not a substitute for production authentication; see "Authentication"
-  above for the rationale and the easy upgrade path (the schema already has a `password_hash`
-  column).
-- **Markdown import/export fidelity** — only headings (`#`, `##`), bullet lists (`-`/`*`),
-  ordered lists, and paragraphs are recognized or produced; tables, links, code blocks, nested
-  lists, and other CommonMark features import as plain paragraphs and are not emitted on export.
-- **DOCX import fidelity** — headings are detected via paragraph style (`Heading1`/`Heading2`/
-  `Title`) and list items via either real Word numbering (`numId`) or a "List"-named paragraph
-  style (to also support generators like python-docx that don't set `numId`). Tables, images,
-  footnotes, and text formatting (bold/italic runs) are not preserved — every run's plain text is
-  concatenated into a single paragraph or list item.
-- **PDF export fidelity** — renders the same simplified heading/paragraph/list structure as
-  Markdown export, through a small internal HTML intermediate and `openhtmltopdf`; no custom
-  fonts, page headers/footers, or print-specific styling beyond basic margins and font sizing.
-- **No pagination** on document, share, comment, or version lists — fine at demo scale, would need
-  to be added for users with large numbers of documents/collaborators/history.
+## What I'd add next
 
-## Future improvements
-
-- Real-time collaborative editing (Yjs/CRDT-based, WebSocket push) instead of
-  optimistic-lock-and-retry plus polling presence
-- Full CommonMark-compliant Markdown import/export, and richer DOCX fidelity (tables, inline
-  formatting, images)
-- Password or OAuth-based login for non-demo deployments
-- Text-anchored comments (margin comments tied to a selection) and a true suggestion/accept-reject
-  mode
-- Restore-to-version and version-to-version diffing for document history
-- Pagination and search-on-the-server for large document sets
-- Granular audit log of who changed what and when
+- Real collaborative editing (Yjs or similar) with live cursors
+- Full CommonMark support both ways, richer DOCX handling
+- Real auth (password or OAuth) for anything beyond a demo
+- Text-anchored comments, actual suggestion mode
+- Restore-to-version, diffing between versions
+- Pagination, server-side search
+- An audit log of who changed what

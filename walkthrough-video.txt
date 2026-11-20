@@ -1,0 +1,5 @@
+Walkthrough video URL: [TO BE FILLED IN]
+
+Not recorded yet. Will cover: login as each demo account, create/edit a document, autosave,
+sharing + permissions (editor vs viewer), file import (txt/md/docx), comments, version history,
+presence, and export to PDF/Markdown.
