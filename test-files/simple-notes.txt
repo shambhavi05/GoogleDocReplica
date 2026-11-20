@@ -1,0 +1,9 @@
+Simple Notes
+
+This is a plain text file meant for testing the TXT import feature of DocSpace.
+
+Each blank-line-separated block becomes its own paragraph in the imported document. This paragraph, for example, should land as a separate block from the one above it.
+
+Here is a third paragraph to confirm that multiple paragraphs import correctly, in order, without losing any content or mixing paragraphs together.
+
+End of file.

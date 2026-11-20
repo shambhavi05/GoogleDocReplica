@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: docspace-app-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: docspace
+      POSTGRES_USER: docspace
+      POSTGRES_PASSWORD: docspace
+    ports:
+      # Intentionally non-default (not 5432/5433): other local projects on this
+      # machine have been observed binding those ports with destructive
+      # ddl-auto=create-drop configs, which wipes this project's data if the
+      # ports collide. Keep this project's Postgres fully isolated.
+      - "5434:5432"
+    volumes:
+      - docspace_app_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docspace -d docspace"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: docspace-app-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/docspace
+      DB_USERNAME: docspace
+      DB_PASSWORD: docspace
+      CORS_ALLOWED_ORIGINS: http://localhost:5173
+    ports:
+      - "8080:8080"
+
+volumes:
+  docspace_app_postgres_data:

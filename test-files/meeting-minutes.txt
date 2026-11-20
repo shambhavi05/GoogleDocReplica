@@ -1,0 +1,13 @@
+Weekly Sync - Meeting Minutes
+
+Attendees: Shambhavi, Bob, Charlie. Meeting started a few minutes late due to a calendar conflict.
+
+Topic one was the current state of the sharing feature. Bob confirmed that editor and viewer permissions are both working as expected in manual testing.
+
+Topic two covered the file import feature. Charlie asked whether PDF support was planned; the answer was no, only TXT and Markdown are in scope for this release.
+
+Topic three was a quick discussion on the autosave debounce timing, which is currently set to about one second after the last keystroke.
+
+Next steps: Bob will write additional backend tests, Charlie will review the dashboard empty states, and Shambhavi will update the documentation before the next review.
+
+Meeting ended on time.
