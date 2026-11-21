@@ -1,5 +1,14 @@
 server:
   port: ${SERVER_PORT:8080}
+  servlet:
+    session:
+      cookie:
+        # SameSite=None + Secure is required for the session cookie to survive a
+        # cross-site request when the frontend (Vercel) and backend (Render) are on
+        # different domains. Secure=true requires HTTPS, which both platforms provide;
+        # browsers reject SameSite=None over plain HTTP anyway.
+        same-site: ${COOKIE_SAME_SITE:lax}
+        secure: ${COOKIE_SECURE:false}
 
 spring:
   application:
