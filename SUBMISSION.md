@@ -12,7 +12,7 @@ https://drive.google.com/drive/folders/1QJOEy2o-9BJIiHDv9m600iaJI8Tu-x3X
 | Architecture note | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
 | AI workflow note | [`AI_WORKFLOW.md`](AI_WORKFLOW.md) |
 | Submission file (what's included) | [`SUBMISSION.md`](SUBMISSION.md) — this file |
-| Live product URL | [`SUBMISSION.md`](SUBMISSION.md#live-url) — to be filled in once deployed |
+| Live product URL | [`SUBMISSION.md`](SUBMISSION.md#live-url) — https://frontend-ivory-one-26.vercel.app |
 | Walkthrough video URL | [`walkthrough-video.txt`](walkthrough-video.txt) + Drive folder above |
 | Screenshots / demo GIF | [`screenshots/`](screenshots/) + Drive folder above |
 | Manual test checklist (extra) | [`UI_TEST_CASES.md`](UI_TEST_CASES.md) |
@@ -58,10 +58,16 @@ with `npm run dev`.
 
 ## Live URL
 
-**[TO BE FILLED IN]** — backend's deploying to Render (blueprint's in `render.yaml`, pushed and
-tested against a real Postgres connection string before going live), frontend's going to Vercel.
-Not filling in a URL here until both are actually confirmed working — won't paste something that
-hasn't been checked.
+**App:** https://frontend-ivory-one-26.vercel.app
+**API:** https://docspace-backend-yeky.onrender.com
+
+Frontend's on Vercel, backend + Postgres on Render (free tier, via the `render.yaml` blueprint).
+Checked for real before putting this here — logged in, loaded documents, confirmed the session
+actually persists across the two different domains (had to set the session cookie to
+`SameSite=None; Secure` for that to work cross-site, see `ARCHITECTURE.md`).
+
+Backend's on Render's free tier, so it spins down when idle — first request after a while might
+take 30-60 seconds to wake up. That's normal, not a bug.
 
 ## Demo logins
 
@@ -101,7 +107,6 @@ dropped into the Drive folder above once done.
 
 ## What's not done
 
-- Not deployed yet (see Live URL above)
 - No real-time co-editing or live cursors — version-based conflict detection and polling presence
   only
 - No real auth (password/OAuth) — by design for a demo, schema supports adding it later
@@ -114,7 +119,6 @@ dropped into the Drive folder above once done.
 ## What I'd do next
 
 - Real collaborative editing with live cursors
-- Finish the Render + Vercel deploy and drop the real URL in here
 - Record the walkthrough video
 - Full CommonMark both ways, better DOCX fidelity
 - Text-anchored comments, real suggestion mode
